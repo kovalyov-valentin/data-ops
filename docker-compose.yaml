@@ -1,0 +1,44 @@
+version: "4.2"
+services:
+  postgres:
+    image: postgres:latest
+    restart: on-failure
+    container_name: hezzl-service
+    environment:
+      POSTGRES_DB: "hezzldb"
+      POSTGRES_USER: "hezzl"
+      POSTGRES_PASSWORD: "password"
+    ports:
+      - "5040:5432"
+
+  nats:
+    image: nats:latest
+    restart: no
+    container_name: nats
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: "--http_port 8222 -js"
+
+  redis:
+    image: redis:alpine
+    command: redis-server --requirepass password
+    container_name: redis
+    ports:
+      - "6379:6379"
+    environment:
+      REDIS_REPLICATION_MODE: "master"
+
+  clickhouse:
+    container_name: clickhouse
+    image: clickhouse/clickhouse-server:23.3.8.21-alpine
+    restart: always
+    ports:
+      - "8123:8123"
+    volumes:
+      - ./migrations/clickhouse/:/docker-entrypoint-initdb.d/
+      - ./clickhousedb:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_USER: "hezzl"
+      CLICKHOUSE_PASSWORD: "password"
+      CLICKHOUSE_DB: "logs"
