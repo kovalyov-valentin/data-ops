@@ -12,7 +12,19 @@ type Goods interface {
 	UpdateGoods(ctx context.Context, name, description string, id, projectsId int) (models.Goods, error)
 	DeleteGoods(ctx context.Context, id, projectsId int) (models.Goods, error)
 	GetGood(ctx context.Context, id, projectsId int) (models.Goods, error)
-	GetGoods(ctx context.Context) ([]models.Goods, error)
+	GetGoods(ctx context.Context, limit, offset int) (models.GoodsResponse, error)
+}
+
+type Cache interface {
+	GetGoods(ctx context.Context) ([]models.GoodsResponse, error)
+	GetGood(ctx context.Context, id, projectsId int) (models.Goods, error)
+	Update(ctx context.Context, name, description string, id, projectsId int) (models.Goods, error)
+	Delete(ctx context.Context, id, projectsId int) (models.Goods, error)
+}
+
+type repositoryClickhouse interface{}
+
+type Queue interface {
 }
 
 type EventSaver interface {
@@ -26,6 +38,8 @@ type Event interface {
 type Service struct {
 	Goods      Goods
 	EventSaver EventSaver
+	Cache      Cache
+	Queue      Queue
 }
 
 func NewService(repos *storage.Repository) *Service {

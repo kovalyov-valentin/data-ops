@@ -18,49 +18,82 @@ func NewGoodsPostgres(db *sql.DB) *GoodsPostgres {
 	}
 }
 
-// TODO: transaction
-// TODO: implement pagination
 func (p *GoodsPostgres) CreateGoods(ctx context.Context, name string, projectsId int) (models.Goods, error) {
-	const op = "postgres.CreateItem"
+	const op = "storage.postgres.CreateItem"
 
 	query := `
-		INSERT INTO goods (name, projects_id)
-		VALUES ($1, $2)
-		RETURNING id, created_at, priority
+		INSERT INTO 
+		    goods (name, projects_id)
+		VALUES 
+		    ($1, $2)
+		RETURNING id, projects_id, name, description, priority, removed, created_at
 	`
 
-	var item models.Goods
+	var goods models.Goods
 	err := p.db.QueryRowContext(ctx, query, name, projectsId).
-		Scan(&item.ID, &item.CreatedAt, &item.Priority)
+		Scan(&goods.ID, &goods.ProjectsID, &goods.Name, &goods.Description, &goods.Priority, &goods.Removed, &goods.CreatedAt)
 	if err != nil {
-		// Обработка ошибки.
 		return models.Goods{}, fmt.Errorf("%s: %w", op, err)
 	}
 
-	return item, nil
+	return goods, nil
 }
 
 func (p *GoodsPostgres) UpdateGoods(ctx context.Context, name, description string, id, projectsId int) (models.Goods, error) {
-	const op = "postgres.UpdateGoods"
+	const op = "storage.postgres.UpdateGoods"
 
-	sqlQuery := `
-		UPDATE goods
-		SET name = $1, description = $2
-		WHERE id = $3 AND projects_id = $4
-		RETURNING id, created_at, priority
-	`
-
-	var item models.Goods
-	err := p.db.QueryRowContext(ctx, sqlQuery, name, description, id, projectsId).Scan(&item.ID, &item.CreatedAt, &item.Priority)
+	tx, err := p.db.Begin()
 	if err != nil {
-
-		if errors.Is(err, sql.ErrNoRows) {
-			return models.Goods{}, errors.New("not found goods")
-		}
 		return models.Goods{}, fmt.Errorf("%s: %w", op, err)
 	}
 
-	return item, nil
+	queryUpdate := `
+		UPDATE goods
+		SET name = $1, description = $2
+		WHERE id = $3 AND projects_id = $4
+		RETURNING id
+	`
+
+	row := tx.QueryRowContext(ctx, queryUpdate, name, description, id, projectsId)
+	if err := row.Err(); err != nil {
+		return models.Goods{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	var idGoods int
+	if err := row.Scan(&idGoods); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return models.Goods{}, fmt.Errorf("%s: %w", op, err)
+		}
+	}
+
+	querySelect := `
+		SELECT id, projects_id, name, description, priority, removed, created_at 
+		FROM goods 
+		WHERE id = $1`
+
+	row = tx.QueryRowContext(ctx, querySelect, idGoods)
+	if err := row.Err(); err != nil {
+		return models.Goods{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	var goods models.Goods
+	if err := row.Scan(
+		&goods.ID,
+		&goods.ProjectsID,
+		&goods.Name,
+		&goods.Description,
+		&goods.Priority,
+		&goods.Removed,
+		&goods.CreatedAt,
+	); err != nil {
+		return models.Goods{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return models.Goods{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	return goods, nil
 
 }
 
@@ -89,17 +122,28 @@ func (p *GoodsPostgres) DeleteGoods(ctx context.Context, id, projectsId int) (mo
 }
 
 func (p *GoodsPostgres) GetGood(ctx context.Context, id, projectsId int) (models.Goods, error) {
-	const op = "postgres.GetGood"
+	const op = "storage.postgres.GetGood"
 
-	var goods models.Goods
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return models.Goods{}, fmt.Errorf("%s: %w", op, err)
+	}
+	defer tx.Rollback()
 
 	query := `
 		SELECT id, projects_id, name, description, priority, removed, created_at 
 		FROM goods 
-		WHERE id = $1 AND projects_id = $2`
-	row := p.db.QueryRowContext(ctx, query, id, projectsId)
+		WHERE id = $1 AND projects_id = $2
+		`
 
-	err := row.Scan(
+	row := tx.QueryRowContext(ctx, query, id, projectsId)
+	if err != nil {
+		return models.Goods{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	var goods models.Goods
+
+	err = row.Scan(
 		&goods.ID,
 		&goods.ProjectsID,
 		&goods.Name,
@@ -108,48 +152,101 @@ func (p *GoodsPostgres) GetGood(ctx context.Context, id, projectsId int) (models
 		&goods.Removed,
 		&goods.CreatedAt,
 	)
+
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return models.Goods{}, fmt.Errorf("%s: no rows found", op)
+		if errors.Is(err, sql.ErrNoRows) {
+			return models.Goods{}, fmt.Errorf("%s: %w", op, err)
 		}
+		return models.Goods{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	if err = row.Err(); err != nil {
+		return models.Goods{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	if err = tx.Commit(); err != nil {
 		return models.Goods{}, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return goods, nil
 }
 
-func (p *GoodsPostgres) GetGoods(ctx context.Context) ([]models.Goods, error) {
-	const op = "postgres.GetCampaigns"
+func (p *GoodsPostgres) GetGoods(ctx context.Context, limit, offset int) (models.GoodsResponse, error) {
+	// TODO: refactor
+	const op = "storage.postgres.GetGoods"
 
-	itemList := make([]models.Goods, 0)
-
-	sqlReq := "SELECT * FROM " + tableGoods
-
-	rows, err := p.db.QueryContext(ctx, sqlReq)
+	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
+		return models.GoodsResponse{}, fmt.Errorf("%s: %w", op, err)
 	}
-	defer rows.Close()
+	defer tx.Rollback()
 
+	query := `
+		SELECT * 
+		FROM goods 
+		LIMIT $1 OFFSET $2
+         `
+
+	rows, err := tx.QueryContext(ctx, query, limit, offset)
+	if err != nil {
+		return models.GoodsResponse{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	var goods []models.Goods
 	for rows.Next() {
-		var goods models.Goods
-		err = rows.Scan(&goods.ID,
-			&goods.ProjectsID,
-			&goods.Name,
-			&goods.Description,
-			&goods.Priority,
-			&goods.Removed,
-			&goods.CreatedAt,
+		var good models.Goods
+		err = rows.Scan(
+			&good.ID,
+			&good.ProjectsID,
+			&good.Name,
+			&good.Description,
+			&good.Priority,
+			&good.Removed,
+			&good.CreatedAt,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", op, err)
+			return models.GoodsResponse{}, fmt.Errorf("%s: %w", op, err)
 		}
-		itemList = append(itemList, goods)
+		goods = append(goods, good)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("%s rows.Err() %w", op, err)
+	if err = rows.Err(); err != nil {
+		return models.GoodsResponse{}, fmt.Errorf("%s: %w", op, err)
 	}
 
-	return itemList, nil
+	queryTotal := "SELECT COUNT(id) FROM goods"
+	rowTotal := p.db.QueryRowContext(ctx, queryTotal)
+	if err = rowTotal.Err(); err != nil {
+		return models.GoodsResponse{}, fmt.Errorf("%s: %w", op, err)
+	}
+	var total int
+	if err = rowTotal.Scan(&total); err != nil {
+		return models.GoodsResponse{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	queryRemoved := "SELECT COUNT(id) FROM goods WHERE removed = true"
+	rowRemoved := p.db.QueryRowContext(ctx, queryRemoved)
+	if err = rowRemoved.Err(); err != nil {
+		return models.GoodsResponse{}, fmt.Errorf("%s: %w", op, err)
+	}
+	var removed int
+	if err = rowRemoved.Scan(&removed); err != nil {
+		return models.GoodsResponse{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return models.GoodsResponse{}, fmt.Errorf("%s: %w", op, err)
+	}
+
+	resp := models.GoodsResponse{
+		Meta: models.Meta{
+			Total:   total,
+			Removed: removed,
+			Limit:   limit,
+			Offset:  offset,
+		},
+		Goods: goods,
+	}
+
+	return resp, nil
 }

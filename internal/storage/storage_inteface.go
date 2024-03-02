@@ -14,11 +14,11 @@ type Goods interface {
 	UpdateGoods(ctx context.Context, name, description string, id, projectsId int) (models.Goods, error)
 	DeleteGoods(ctx context.Context, id, projectsId int) (models.Goods, error)
 	GetGood(ctx context.Context, id, projectsId int) (models.Goods, error)
-	GetGoods(ctx context.Context) ([]models.Goods, error)
+	GetGoods(ctx context.Context, limit, offset int) (models.GoodsResponse, error)
 }
 
 type Cache interface {
-	GetGoods(ctx context.Context) ([]models.Goods, error)
+	GetGoods(ctx context.Context) ([]models.GoodsResponse, error)
 	GetGood(ctx context.Context, id, projectsId int) (models.Goods, error)
 	Update(ctx context.Context, name, description string, id, projectsId int) (models.Goods, error)
 	Delete(ctx context.Context, id, projectsId int) (models.Goods, error)
@@ -36,7 +36,7 @@ type Repository struct {
 
 func NewRepository(db *sql.DB, client *redis.Client) *Repository {
 	goodsRepo := postgres.NewGoodsPostgres(db)
-	redisGoods := rdb.NewGoodsRedis(client, goodsRepo)
+	redisGoods := rdb.NewRepoRedis(client, goodsRepo)
 	//natsGoods, _ := natsService.NewGoodsRepo(redisGoods, njs)
 	//eventRepo := clickhouse.NewRepositoryClickhouse(db)
 

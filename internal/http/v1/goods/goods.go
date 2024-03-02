@@ -15,7 +15,7 @@ type Handlers struct {
 	service services.Goods
 }
 
-func New(log *slog.Logger, repo services.Goods) *Handlers {
+func NewHandlers(log *slog.Logger, repo services.Goods) *Handlers {
 	return &Handlers{
 		log:     log,
 		service: repo,
@@ -93,7 +93,7 @@ func (h *Handlers) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, response.ResponseRemove{Removed: it.Removed, Id: goodsId, ProjectsId: projectsId})
 }
 
-func (h *Handlers) GetItem(c *gin.Context) {
+func (h *Handlers) GetGood(c *gin.Context) {
 	goodsId, projectsId, err := h.parseParam(c)
 	if err != nil {
 		c.AbortWithStatus(http.StatusBadRequest)
@@ -107,13 +107,39 @@ func (h *Handlers) GetItem(c *gin.Context) {
 	c.JSON(http.StatusOK, allItems)
 }
 
-func (h *Handlers) GetItems(c *gin.Context) {
-	allItems, err := h.service.GetGoods(c.Request.Context())
+func (h *Handlers) GetGoods(c *gin.Context) {
+	limitStr := c.Query("limit")
+	offsetStr := c.Query("offset")
+
+	var (
+		limitInt  = 10
+		offsetInt = 1
+		err       error
+	)
+
+	if limitStr != "" {
+		limitInt, err = strconv.Atoi(limitStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be an integer"})
+			return
+		}
+	}
+
+	if offsetStr != "" {
+		offsetInt, err = strconv.Atoi(offsetStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "offset must be an integer"})
+			return
+		}
+	}
+
+	goodsResponse, err := h.service.GetGoods(c.Request.Context(), limitInt, offsetInt)
 	if err != nil {
-		c.AbortWithStatus(http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, allItems)
+
+	c.JSON(http.StatusOK, goodsResponse)
 }
 
 func (h *Handlers) parseParam(c *gin.Context) (goodsId, projectsId int, err error) {

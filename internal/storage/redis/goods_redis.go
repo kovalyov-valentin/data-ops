@@ -15,35 +15,35 @@ type GoodsRedis struct {
 	goodsPG *postgres.GoodsPostgres
 }
 
-func NewGoodsRedis(cache *redis.Client, goodsPG *postgres.GoodsPostgres) *GoodsRedis {
+func NewRepoRedis(cache *redis.Client, goodsPG *postgres.GoodsPostgres) *GoodsRedis {
 	return &GoodsRedis{
 		cache:   cache,
 		goodsPG: goodsPG,
 	}
 }
 
-func (r *GoodsRedis) GetGoods(ctx context.Context) ([]models.Goods, error) {
+func (r *GoodsRedis) GetGoods(ctx context.Context) ([]models.GoodsResponse, error) {
 	val, err := r.cache.Get(ctx, "GetGoods").Bytes()
 	if err != nil {
-		goodsList, err := r.goodsPG.GetGoods(ctx)
+		goodsList, err := r.goodsPG.GetGoods(ctx, 0, 0)
 		if err != nil {
-			return nil, err
+			return []models.GoodsResponse{}, err
 		}
 
 		data, err := json.Marshal(goodsList)
 		if err != nil {
-			return goodsList, nil
+			return nil, err
 		}
 		r.cache.SetNX(ctx, "GetGoods", data, time.Minute)
-		return goodsList, nil
-	}
-
-	list := make([]models.Goods, 0)
-	err = json.Unmarshal(val, &list)
-	if err != nil {
 		return nil, err
 	}
-	return list, err
+
+	list := make([]models.GoodsResponse, 0)
+	err = json.Unmarshal(val, &list)
+	if err != nil {
+		return []models.GoodsResponse{}, err
+	}
+	return list, nil
 }
 func (r *GoodsRedis) GetGood(ctx context.Context, id, projectsId int) (models.Goods, error) {
 	goodsKey := fmt.Sprintf("GetGoods-%d-%d", id, projectsId)
