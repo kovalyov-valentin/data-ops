@@ -3,6 +3,7 @@ package goods
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/kovalyov-valentin/data-ops/internal/domain/models"
 	"github.com/kovalyov-valentin/data-ops/internal/storage"
 )
@@ -26,6 +27,7 @@ func (i *UseCase) UpdateGoods(ctx context.Context, name, description string, id,
 	if name == "" {
 		return models.Goods{}, errors.New("failed to update goods")
 	}
+
 	return i.repo.UpdateGoods(ctx, name, description, id, projectsId)
 }
 
@@ -37,6 +39,11 @@ func (i *UseCase) GetGood(ctx context.Context, id, projectsId int) (models.Goods
 	return i.repo.GetGood(ctx, id, projectsId)
 }
 
-func (i *UseCase) GetGoods(ctx context.Context) ([]models.Goods, error) {
-	return i.repo.GetGoods(ctx)
+func (i *UseCase) GetGoods(ctx context.Context, limit, offset int) (models.GoodsResponse, error) {
+	const op = "services.goods.GetGoods"
+	allGoods, err := i.repo.GetGoods(ctx, limit, offset)
+	if err != nil {
+		return models.GoodsResponse{}, fmt.Errorf("%s: %w", op, err)
+	}
+	return allGoods, nil
 }

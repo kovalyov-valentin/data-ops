@@ -26,15 +26,15 @@ func (h *Handler) InitRoutes() *gin.Engine {
 
 	r := router.Group("/v1")
 
-	goodsHandle := goods.New(h.log, h.services.Goods)
+	goodsHandle := goods.NewHandlers(h.log, h.services.Goods)
 	good := r.Group("/good")
 	{
 		good.POST("/create", goodsHandle.Create)
 		good.PATCH("/update", goodsHandle.Update)
-		good.GET("/", goodsHandle.GetItem)
+		good.GET("/", goodsHandle.GetGood)
 		good.DELETE("/remove", goodsHandle.Delete)
 	}
-	r.GET("/goods/list", goodsHandle.GetItems)
+	r.GET("/goods/list", goodsHandle.GetGoods)
 
 	return router
 }
